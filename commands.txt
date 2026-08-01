@@ -5,3 +5,22 @@ lerobot-calibrate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --
 
 teleop:
 lerobot-teleoperate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+
+gripper travel fix:
+the follower multiplies the leader's gripper angle by joint_directions["gripper"]=6.0
+and then clamps the result to joint_limits["gripper"]=(0,270). so only the first 45
+degrees of leader travel (270/6) does anything -- past that the command is pinned at
+the clamp. dropping the scale to 3.0 spreads the same 0-270 follower range across 90
+degrees of leader travel instead. the clamp, torque limit and mit gains are untouched,
+so the commanded envelope is identical -- only the mapping gets gentler (3 deg/deg
+instead of 6). append to the teleop or record command:
+
+--robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
+
+note this does not make the gripper track position properly. the rs gripper goes
+through send_mit(0, 0, 0, 1.5, tau_ff) with kp=0, so it is torque controlled and the
+torque saturates once position error passes ~48 deg (torque_limit 10.0 / kp 12.0). the
+flag widens where the closing command ramps, it does not turn it into a position servo.
+
+untested on hardware -- verified the flag parses and lands in the config, nothing more.
+try one teleop run before recording episodes.
