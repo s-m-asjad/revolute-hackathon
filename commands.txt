@@ -4,16 +4,16 @@ calibrate:
 lerobot-calibrate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan
 
 teleop:
-lerobot-teleoperate --config_path=arm_config.yaml --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --robot.max_relative_target=2.0 --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+lerobot-teleoperate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --robot.max_relative_target=2.0 --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
 
 max_relative_target caps deg per cycle. 2.0 at 60fps = 120 deg/s. raise if teleop feels sluggish, drop for more safety margin.
 
-arm_config.yaml widens wrist_roll to -180/180. +-180 is the max. add --config_path to lerobot-record too.
+wrist_roll stays at the stock -90/90. mechanical stop, widening it just drives the motor into the hard stop.
 
-leader_unwrap.patch stops the leader flipping the follower ~355deg when rolled past 180. apply once per machine:
+leader_unwrap.patch stops the leader flipping the follower to the opposite limit when rolled past 180. still worth applying at -90/90. once per machine:
 patch -p1 -d "$(python -c 'import lerobot_teleoperator_rebot_arm_102 as m, os; print(os.path.dirname(os.path.dirname(m.__file__)))')" < leader_unwrap.patch
 
 jaw: scale 6.0 vs clamp 270 = only 45deg leader travel usable. 3.0 spreads it over 90.
 --robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
 
-both untested on hardware.
+untested on hardware.
