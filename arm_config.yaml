@@ -1,0 +1,19 @@
+# wrist_roll widened to -180/180. all joints must be listed - draccus replaces the dict, missing joints get no clipping.
+robot:
+  joint_limits:
+    shoulder_pan: [-145.0, 145.0]
+    shoulder_lift: [-0.0, 170.0]
+    elbow_flex: [-0.0, 200.0]
+    wrist_flex: [-80.0, 90.0]
+    wrist_yaw: [-90.0, 90.0]
+    wrist_roll: [-180.0, 180.0]
+    gripper: [-0.0, 270.0]
+teleop:
+  joint_ranges:
+    shoulder_pan: [-150, 150]
+    shoulder_lift: [-1, 170]
+    elbow_flex: [-200, 1]
+    wrist_flex: [-80, 90]
+    wrist_yaw: [-90, 90]
+    wrist_roll: [-180, 180]
+    gripper: [-0, 270]

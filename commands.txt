@@ -4,10 +4,9 @@ calibrate:
 lerobot-calibrate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan
 
 teleop:
-lerobot-teleoperate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+lerobot-teleoperate --config_path=arm_config.yaml --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
 
-wrist roll: clamped -90/+90 on both sides, widen both or it re-clips. +-180 max. brackets not parens. check cable first.
---robot.joint_limits="{shoulder_pan: [-145.0, 145.0], shoulder_lift: [-0.0, 170.0], elbow_flex: [-0.0, 200.0], wrist_flex: [-80.0, 90.0], wrist_yaw: [-90.0, 90.0], wrist_roll: [-180.0, 180.0], gripper: [-0.0, 270.0]}" --teleop.joint_ranges="{shoulder_pan: [-150, 150], shoulder_lift: [-1, 170], elbow_flex: [-200, 1], wrist_flex: [-80, 90], wrist_yaw: [-90, 90], wrist_roll: [-180, 180], gripper: [-0, 270]}"
+arm_config.yaml widens wrist_roll to -180/180. +-180 is the max. add --config_path to lerobot-record too.
 
 jaw: scale 6.0 vs clamp 270 = only 45deg leader travel usable. 3.0 spreads it over 90.
 --robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
