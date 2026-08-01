@@ -1,0 +1,52 @@
+--- a/lerobot_teleoperator_rebot_arm_102/rebot_arm_102_leader.py	2026-08-01 14:58:02.174955836 -0400
++++ b/lerobot_teleoperator_rebot_arm_102/rebot_arm_102_leader.py	2026-08-01 14:58:35.605964348 -0400
+@@ -32,6 +32,7 @@
+         self.bus: FashionStarServo | None = None
+         self.motor_names = list(self.config.joint_ids.keys())
+         self._last_raw_positions: dict[str, float] = {}
++        self._last_unwrapped: dict[str, float] = {}
+         self._validate_config()
+ 
+     def _validate_config(self) -> None:
+@@ -136,6 +137,8 @@
+         for motor_id in self.config.joint_ids.values():
+             self.bus.reset_multi_turn(motor_id)
+ 
++        self._last_unwrapped.clear()  # counters reset, old values no longer line up
++
+     def _read_raw_positions(self) -> dict[str, float]:
+         result: dict[int, ServoMonitor | None] = self.bus.sync_monitor(
+             list(self.config.joint_ids.values())
+@@ -175,6 +178,17 @@
+         # Fallback: direct modular arithmetic (should never be reached)
+         return value - round((value - center) / 360.0) * 360.0, 4096
+ 
++    def _unwrap_continuous(
++        self, motor_name: str, value: float, min_value: float, max_value: float
++    ) -> Tuple[float, int]:
++        """Unwrap against the previous value, not a fixed window -- the window aliases at its edge."""
++        prev = self._last_unwrapped.get(motor_name)
++        if prev is None:
++            return self._round_to_valid_range(value, min_value, max_value)
++
++        turns = round((prev - value) / 360.0)
++        return value + turns * 360.0, turns
++
+     def get_action(self) -> RobotAction:
+         start = time.perf_counter()
+ 
+@@ -195,9 +209,12 @@
+         action_dict: dict[str, Any] = {}
+         for motor_name in self.motor_names:
+             range_min, range_max = self.config.joint_ranges[motor_name]
+-            unwrapped, k = self._round_to_valid_range(raw_positions[motor_name],float(range_min),float(range_max))
++            unwrapped, k = self._unwrap_continuous(
++                motor_name, raw_positions[motor_name], float(range_min), float(range_max)
++            )
++            self._last_unwrapped[motor_name] = unwrapped
+             position = unwrapped
+-            if k > 0:
++            if k != 0:
+                 logger.debug(
+                     f"Servo {motor_name} (id={self.config.joint_ids[motor_name]}) has wrapped {k} * 360°. "
+                     f"Unwrapped pos: {unwrapped:.1f}° (raw: {raw_positions[motor_name]:.1f}°)"

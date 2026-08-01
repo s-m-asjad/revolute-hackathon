@@ -8,6 +8,9 @@ lerobot-teleoperate --config_path=arm_config.yaml --robot.type=seeed_b601_rs_fol
 
 arm_config.yaml widens wrist_roll to -180/180. +-180 is the max. add --config_path to lerobot-record too.
 
+leader_unwrap.patch stops the leader flipping the follower ~355deg when rolled past 180. apply once per machine:
+patch -p1 -d "$(python -c 'import lerobot_teleoperator_rebot_arm_102 as m, os; print(os.path.dirname(os.path.dirname(m.__file__)))')" < leader_unwrap.patch
+
 jaw: scale 6.0 vs clamp 270 = only 45deg leader travel usable. 3.0 spreads it over 90.
 --robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
 
