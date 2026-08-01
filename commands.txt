@@ -17,3 +17,129 @@ jaw: scale 6.0 vs clamp 270 = only 45deg leader travel usable. 3.0 spreads it ov
 --robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
 
 untested on hardware.
+
+
+running commands
+
+calibrate:
+lerobot-calibrate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan
+
+teleop:
+lerobot-teleoperate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader 
+
+teleop + record trajectories to trajectories/ (press r to start recording, s to stop
+and save (asks for a filename each time), q to quit):
+lerobot-teleop-record --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader 
+
+playback a saved trajectory (prompts you to pick a file from trajectories/ if
+--trajectory is omitted):
+lerobot-playback --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --robot.joint_directions= --trajectory=trajectories/<name>.json
+
+
+gripper travel fix:
+the follower multiplies the leader's gripper angle by joint_directions["gripper"]=6.0
+and then clamps the result to joint_limits["gripper"]=(0,270). so only the first 45
+degrees of leader travel (270/6) does anything -- past that the command is pinned at
+the clamp. dropping the scale to 3.0 spreads the same 0-270 follower range across 90
+degrees of leader travel instead. the clamp, torque limit and mit gains are untouched,
+so the commanded envelope is identical -- only the mapping gets gentler (3 deg/deg
+instead of 6). append to the teleop or record command:
+
+--robot.joint_directions="{shoulder_pan: 1.0, shoulder_lift: 1.0, elbow_flex: -1.0, wrist_flex: -1.0, wrist_yaw: -1.0, wrist_roll: 1.0, gripper: 3.0}"
+
+note this does not make the gripper track position properly. the rs gripper goes
+through send_mit(0, 0, 0, 1.5, tau_ff) with kp=0, so it is torque controlled and the
+torque saturates once position error passes ~48 deg (torque_limit 10.0 / kp 12.0). the
+flag widens where the closing command ramps, it does not turn it into a position servo.
+
+untested on hardware -- verified the flag parses and lands in the config, nothing more.
+try one teleop run before recording episodes.
+
+lerobot-teleop-record --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+
+--- LLM trajectory test (local Ollama + qwen2.5:3b, runs on the Jetson's GPU) ---
+
+Ollama is installed under ~/.local (no sudo, added to PATH in ~/.bashrc) with the
+jetpack6 CUDA backend. It's currently running in the background (started manually);
+if it's ever not running, `lerobot-play-by-prompt` will auto-start it and auto-pull
+the model on first use. To start/check it manually:
+  ~/.local/bin/ollama serve   (leave running in a terminal, or `&` it)
+  ~/.local/bin/ollama list    (see downloaded models)
+
+Test: if the prompt matches "make a sandwich" (paraphrases OK), it plays back EVERY
+trajectory file currently in trajectories/ in sequence, immediately, no confirmation
+prompt. Anything else -> does nothing, robot is never touched.
+
+lerobot-play-by-prompt --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --prompt="make a sandwich"
+
+(swap --prompt for something unrelated, e.g. --prompt="do a backflip", to confirm it
+correctly does nothing)
+
+--- Vision ingredient check (Qwen2.5-VL 3b, also via Ollama) ---
+
+Once the text prompt matches, the script takes a photo with --camera (default
+/dev/video2 -- run `lerobot-find-cameras opencv` to check what's plugged in on your
+machine), asks the local Qwen2.5-VL vision model what it sees (printed to the
+console), and checks it against --ingredients (default: bread, cheese, ham, lettuce).
+
+IMPORTANT: make sure nothing else is holding the CAN port / leader serial port (e.g. a
+`lerobot-teleoperate` or `lerobot-teleop-record` session in another terminal) before
+running this -- Ctrl+C it first.
+
+Default is REPORT-ONLY for now (--require_ingredients=false): it always prints what it
+sees and which ingredients are present/missing, then plays back both trajectories in
+trajectories/ regardless of what's actually on the table. Pass
+--require_ingredients=true once you want it to actually refuse to run when something's
+missing (and put real ingredients on the table so the check can pass).
+
+lerobot-play-by-prompt --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --prompt="make a sandwich" --camera=/dev/video2 --ingredients="[bread, cheese, ham]"
+
+Pass --camera="" to skip the photo/ingredient check entirely (old behavior).
+
+First use will auto-pull qwen2.5vl:3b (~3.2GB), same auto-start/auto-pull behavior as
+the text model -- already pulled and tested standalone (camera capture + vision
+description + ingredient check, robot never connected): with only a pan, a plate, a
+bag of shredded cheese and a cucumber on the table, Qwen2.5-VL correctly listed
+everything it saw and reported present=[cheese], missing=[bread, ham, lettuce]. With
+real bread/cheese/ham on the table it correctly reported all three present.
+
+Speed note: the Orin's GPU runs at 99% during inference (confirmed with tegrastats --
+this is a genuinely compute-bound 3B model on this hardware, not a config issue), so
+the description+ingredient-check is a single combined Ollama call (~11s warm) instead
+of two separate calls (~27s warm) -- each vision call pays a large ~7s fixed cost just
+to encode the photo, so merging both questions into one prompt (and asking for a
+concise one-line answer instead of free-form reasoning) roughly halves latency.
+
+Memory note: hit a real bug testing this -- with the text model (qwen2.5:3b) AND the
+vision model (qwen2.5vl:3b) both resident in memory at once (Ollama keeps each loaded
+for 5 min after use by default), the Jetson's shared 16GB memory pool ran out during
+the vision call's image encoding step (`cudaMalloc failed: out of memory` in
+/tmp/ollama-serve.log, 500 from /api/chat). Fixed by explicitly unloading the text
+model (`keep_alive=0`) right before loading the vision model, plus using a smaller
+context window (1024/2048 instead of Ollama's default 4096) for both models to reduce
+their footprint. If you ever see a 500 error here again, check
+`~/.local/bin/ollama ps` for what's loaded and `tail -100 /tmp/ollama-serve.log` for
+the real error (requests.exceptions.HTTPError only shows the generic 500).
+
+Robot-connect retry: separately hit `motorbridge.errors.CallError: disable_all failed:
+control ack timeout` from robot.connect() right after a successful vision check (CAN
+bus was UP with 0 errors -- `ip -details link show can2` -- so likely the follower's
+motor controller just wasn't ready yet, e.g. right after switching away from a
+teleoperate session). The script used to call robot.connect() outside any try/finally,
+so this crashed with a raw traceback and skipped robot.disconnect() entirely.
+lerobot-play-by-prompt now retries robot.connect() up to 3x (2s apart, with a
+best-effort disconnect between attempts) before giving up with a clear message instead
+of a stack trace. This is unrelated to the prompt/vision check, which had already
+printed correctly by that point.
+
+False-positive fix: a 3B VLM visually "recognizing" real food is unreliable (e.g. it
+called a cucumber a pickle, guessed ham was present next to a cheese bag, etc). The
+prompt now requires it to actually READ the item's name as TEXT somewhere in the frame
+(printed on packaging/a label, a sticker, a handwritten/printed sign or card) rather
+than visually identifying a similar-looking object -- an item only counts as "present"
+if the literal word (or an unambiguous abbreviation) is legible in the photo. This
+trades recall for precision: put a card/label with the ingredient's name written on it
+next to each item on the table for the check to recognize it. Verified: with only a
+"Cabot Mexican Cheese" bag on the table (no other labeled items), it now correctly
+reports present=[cheese], missing=[bread, ham, tomato] instead of guessing at the
+other items visually.

@@ -22,6 +22,12 @@ Example:
 ```shell
 lerobot-find-cameras
 ```
+
+To keep running and show a live video feed window per camera instead of saving images:
+
+```shell
+lerobot-find-cameras opencv --live
+```
 """
 
 # NOTE(Steven): RealSense can also be identified/opened as OpenCV cameras. If you know the camera is a RealSense, use the `lerobot-find-cameras realsense` flag to avoid confusion.
@@ -216,6 +222,57 @@ def process_camera_image(
     return None
 
 
+def live_view_cameras(cameras_to_use: list[dict[str, Any]]):
+    """
+    Opens a window per connected camera and continuously displays the live feed
+    until the user presses 'q'/Esc in a camera window or hits Ctrl+C.
+    """
+    import cv2
+
+    window_names: dict[int, str] = {}
+    for cam_dict in cameras_to_use:
+        meta = cam_dict["meta"]
+        window_name = f"{meta.get('type', 'Camera')} - {meta.get('id', 'unknown')}"
+        window_names[id(cam_dict["instance"])] = window_name
+        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+    logger.info("Starting live view. Focus a camera window and press 'q' (or Ctrl+C) to stop.")
+
+    try:
+        while True:
+            for cam_dict in cameras_to_use:
+                cam = cam_dict["instance"]
+                meta = cam_dict["meta"]
+                window_name = window_names[id(cam)]
+                try:
+                    frame = cam.read()
+                except TimeoutError:
+                    logger.warning(f"Timeout reading from camera {meta.get('id')}.")
+                    continue
+                except Exception as e:
+                    logger.error(f"Error reading from camera {meta.get('id')}: {e}")
+                    continue
+
+                # cameras are opened with ColorMode.RGB, but cv2 expects BGR for display.
+                display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                cv2.imshow(window_name, display_frame)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord("q"), 27):  # 'q' or Esc
+                logger.info("Quit key pressed. Stopping live view.")
+                break
+            # Detect windows closed via the 'x' button.
+            if any(
+                cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) < 1 for name in window_names.values()
+            ):
+                logger.info("A camera window was closed. Stopping live view.")
+                break
+    except KeyboardInterrupt:
+        logger.info("Live view interrupted by user.")
+    finally:
+        cv2.destroyAllWindows()
+
+
 def cleanup_cameras(cameras_to_use: list[dict[str, Any]]):
     """Disconnect all cameras."""
     logger.info(f"Disconnecting {len(cameras_to_use)} cameras...")
@@ -231,19 +288,24 @@ def save_images_from_all_cameras(
     output_dir: Path,
     record_time_s: float = 2.0,
     camera_type: str | None = None,
+    live: bool = False,
 ):
     """
-    Connects to detected cameras (optionally filtered by type) and saves images from each.
+    Connects to detected cameras (optionally filtered by type) and saves images from each,
+    or shows a live view window per camera if `live` is set.
     Uses default stream profiles for width, height, and FPS.
 
     Args:
         output_dir: Directory to save images.
-        record_time_s: Duration in seconds to record images.
+        record_time_s: Duration in seconds to record images. Ignored if `live` is set.
         camera_type: Optional string to filter cameras ("realsense" or "opencv").
                             If None, uses all detected cameras.
+        live: If True, opens a window per camera showing a continuously updating feed
+              instead of saving images, until the user quits.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Saving images to {output_dir}")
+    if not live:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Saving images to {output_dir}")
     all_camera_metadata = find_and_print_cameras(camera_type_filter=camera_type)
 
     if not all_camera_metadata:
@@ -258,6 +320,13 @@ def save_images_from_all_cameras(
 
     if not cameras_to_use:
         logger.warning("No cameras could be connected. Aborting image save.")
+        return
+
+    if live:
+        try:
+            live_view_cameras(cameras_to_use)
+        finally:
+            cleanup_cameras(cameras_to_use)
         return
 
     logger.info(f"Starting image capture for {record_time_s} seconds from {len(cameras_to_use)} cameras.")
@@ -310,6 +379,12 @@ def main():
         type=float,
         default=6.0,
         help="Time duration to attempt capturing frames. Default: 6 seconds.",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Keep running and show a live video feed window per camera instead of saving images. "
+        "Press 'q' or Esc in a camera window (or Ctrl+C) to stop.",
     )
     args = parser.parse_args()
     save_images_from_all_cameras(**vars(args))
