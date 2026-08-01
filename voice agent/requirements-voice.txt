@@ -1,0 +1,9 @@
+# Voice → local Whisper → Ollama (Mac + Linux)
+# pip install -r requirements-voice.txt
+
+numpy>=1.24
+sounddevice>=0.4.6
+openai-whisper>=20231117
+
+# Optional (lighter/faster STT on CPU):
+# faster-whisper>=1.0.0
