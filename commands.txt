@@ -4,7 +4,9 @@ calibrate:
 lerobot-calibrate --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan
 
 teleop:
-lerobot-teleoperate --config_path=arm_config.yaml --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+lerobot-teleoperate --config_path=arm_config.yaml --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --robot.max_relative_target=2.0 --teleop.type=rebot_arm_102_leader --teleop.port=/dev/ttyUSB0 --teleop.id=rebot_arm_102_leader
+
+max_relative_target caps deg per cycle. 2.0 at 60fps = 120 deg/s. raise if teleop feels sluggish, drop for more safety margin.
 
 arm_config.yaml widens wrist_roll to -180/180. +-180 is the max. add --config_path to lerobot-record too.
 
