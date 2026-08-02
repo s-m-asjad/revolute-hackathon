@@ -222,3 +222,53 @@ Note: Whisper can hallucinate short phrases on very quiet/ambient-only audio (e.
 transcribed room tone as "It's going to be patient." with no one speaking) -- this is
 a known Whisper quirk on near-silent input, not a bug. Speak clearly and reasonably
 close to the mic for a real transcript.
+
+Voice version of the ingredient-check command above (say "Hey Chef, make a sandwich",
+or "Hey Chef, make a sandwich with cheese and tomato", etc, into the mic instead of
+typing --prompt):
+
+lerobot-play-by-prompt --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --voice=true --camera=/dev/video2 --ingredients="[bread, cheese, ham]"
+
+--- Sandwich assembly order (bread -> fillings -> bread) ---
+
+lerobot-play-by-prompt no longer just plays every file in trajectories/ in filename
+order. It now builds a specific sandwich sequence:
+
+  bread trajectory -> requested filling(s) -> bread trajectory again
+
+Plain requests ("make a sandwich"/"make me a sandwich", no fillings named) play EVERY
+filling that has a recorded trajectory, in the fixed default order: cucumber, tomato,
+cheese, lettuce (--ingredient_order to change it). Requests that name specific
+fillings (e.g. "make a sandwich with cheese and tomato") only play those, in the exact
+order they were said -- "with tomato then cheese" plays tomato first, "with cheese and
+tomato" plays cheese first. This is a plain text match (not the LLM), specifically so
+your wording order is preserved instead of an LLM paraphrasing/reordering it. Either
+way the bread trajectory always plays first and last.
+
+The bread-at-the-end slot uses --bread2_trajectory (default trajectories/rsbread_second.json)
+if that file has been recorded; otherwise it automatically falls back to reusing
+--bread_trajectory (default trajectories/first_bread.json) so the sandwich still gets
+"closed" even with only one bread trajectory recorded. rsbread_second.json has now
+been recorded, so a plain "make a sandwich" closes with it instead of reusing
+first_bread.json.
+
+Fillings without a recorded trajectory are skipped with a printed warning instead of
+failing the whole run. lettuce is now recorded too (rslettuce.json), so all four
+fillings are available. The default mapping is:
+
+  cucumber -> rscucumber.json, tomato -> srstomato.json, cheese -> rscheese.json,
+  lettuce -> rslettuce.json
+
+Override any of this from the CLI, e.g.:
+
+  --bread_trajectory=trajectories/first_bread.json
+  --bread2_trajectory=trajectories/rsbread_second.json
+  --ingredient_trajectories="{cucumber: rscucumber.json, tomato: srstomato.json, cheese: rscheese.json, lettuce: rslettuce.json}"
+  --ingredient_order="[cucumber, tomato, cheese, lettuce]"
+
+Untested on hardware -- verified the plan-building logic (which files get selected,
+fallback behavior, ordering from explicit ingredient mentions) standalone against the
+real trajectories/ folder, including with the newly-recorded rsbread_second.json and
+rslettuce.json (both validated as well-formed trajectory files with the right
+robot_type/teleop_type/joint_names); the actual playback loop itself is unchanged from
+the already-hardware-tested version.

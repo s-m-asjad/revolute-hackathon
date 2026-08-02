@@ -16,9 +16,24 @@
 TEST FEATURE: uses a local LLM (via Ollama) to decide whether a free-text prompt is asking for one
 specific task. If it is, and a camera is configured, it first takes a photo and asks a local
 vision-language model (Qwen2.5-VL, also via Ollama) what it sees and whether the task's required
-ingredients/items are actually on the table -- this is printed to the console either way. Every
-trajectory file in `--trajectories_dir` then gets played back in sequence. If the prompt doesn't match,
-nothing happens -- the robot is never touched.
+ingredients/items are actually on the table -- this is printed to the console either way. It then plays
+back a sandwich-assembly sequence built from `--trajectories_dir`: the bread trajectory, then whichever
+fillable ingredients (cucumber, tomato, cheese, lettuce) were requested, then the bread trajectory again
+(see "Sandwich assembly order" below). If the prompt doesn't match, nothing happens -- the robot is never
+touched.
+
+Sandwich assembly order:
+
+- Plain requests ("make a sandwich", "make me a sandwich") play EVERY configured ingredient (that has a
+  recorded trajectory file) in the fixed default order set by `--ingredient_order` (cucumber, tomato,
+  cheese, lettuce), bracketed by the bread trajectory at the start and end.
+- Requests that name specific ingredients (e.g. "make a sandwich with cheese and tomato") only play those,
+  in the order they were said (e.g. "tomato then cheese" plays tomato before cheese) -- still bracketed by
+  bread at the start and end.
+- The bread trajectory always plays first and last. The end uses `--bread2_trajectory` if that file has
+  been recorded; otherwise it reuses `--bread_trajectory` (the same trajectory the start used).
+- An ingredient with no recorded trajectory file yet (e.g. lettuce, until it's recorded) is skipped with a
+  printed warning instead of failing the whole run.
 
 By default the ingredient check is report-only (`--require_ingredients=false`): it always prints what it
 sees and which ingredients are present/missing, then proceeds to play back the trajectories regardless.
@@ -95,6 +110,7 @@ from lerobot.robots import (  # noqa: F401
 )
 from lerobot.scripts.lerobot_playback import playback_loop
 from lerobot.utils.import_utils import register_third_party_plugins
+from lerobot.utils.ingredient_matching import extract_requested_ingredients
 from lerobot.utils.ollama_client import (
     DEFAULT_HOST,
     DEFAULT_MODEL,
@@ -105,7 +121,7 @@ from lerobot.utils.ollama_client import (
     ensure_server_running,
     unload_model,
 )
-from lerobot.utils.trajectory_io import list_trajectories, load_trajectory
+from lerobot.utils.trajectory_io import load_trajectory
 from lerobot.utils.utils import init_logging, log_say
 from lerobot.utils.voice_input import extract_after_wake_word, record_and_transcribe
 
@@ -141,10 +157,29 @@ class PlayByPromptConfig:
     # full transcript. Set to "" to disable and use the whole transcript as-is.
     voice_wake_word: str = "hey chef"
     # The one task this test recognizes. If `prompt` matches this (by LLM judgement, so paraphrases are
-    # fine), every trajectory in `trajectories_dir` gets played back in sequence.
+    # fine), the sandwich-assembly trajectory sequence below gets played back.
     task_description: str = "make a sandwich"
-    # Folder containing trajectory JSON files saved by `lerobot-teleop-record`.
+    # Folder containing trajectory JSON files saved by `lerobot-teleop-record`. Filenames below are
+    # resolved relative to this directory unless they're absolute paths.
     trajectories_dir: str = "trajectories"
+    # Trajectory played first (the bottom bread slice).
+    bread_trajectory: str = "first_bread.json"
+    # Trajectory played last (the top bread slice). Falls back to `bread_trajectory` if this file hasn't
+    # been recorded yet, so the sandwich still gets "closed" with the same bread trajectory used to start.
+    bread2_trajectory: str = "rsbread_second.json"
+    # Maps each fillable ingredient to its trajectory file. For a plain "make a sandwich" request, every
+    # ingredient here (that has an existing trajectory file) plays in `ingredient_order`. If the prompt
+    # names specific ingredients instead, only those play, in the order the user said them.
+    ingredient_trajectories: dict[str, str] = field(
+        default_factory=lambda: {
+            "cucumber": "rscucumber.json",
+            "tomato": "srstomato.json",
+            "cheese": "rscheese.json",
+            "lettuce": "rslettuce.json",
+        }
+    )
+    # Default playback order for the fillable ingredients when the prompt doesn't name specific ones.
+    ingredient_order: list[str] = field(default_factory=lambda: ["cucumber", "tomato", "cheese", "lettuce"])
     # Ollama model used to classify the prompt.
     model: str = DEFAULT_MODEL
     # Ollama server URL.
@@ -226,6 +261,79 @@ def check_table_for_ingredients(cfg: PlayByPromptConfig) -> bool:
     return True
 
 
+def _resolve_trajectory_path(trajectories_dir: Path, filename: str) -> Path:
+    path = Path(filename)
+    return path if path.is_absolute() else trajectories_dir / path
+
+
+def _require_bread_trajectory(cfg: PlayByPromptConfig) -> None:
+    """Raises `FileNotFoundError` if the bread trajectory is missing, without printing anything -- used
+    to fail fast, before bothering Ollama/the camera, without pre-announcing the sandwich plan for a
+    prompt that might not even match the known task yet.
+    """
+    bread_path = _resolve_trajectory_path(Path(cfg.trajectories_dir), cfg.bread_trajectory)
+    if not bread_path.is_file():
+        raise FileNotFoundError(
+            f"Bread trajectory '{bread_path}' not found. Record it with `lerobot-teleop-record` first, "
+            "or point --bread_trajectory at the right file."
+        )
+
+
+def build_trajectory_plan(cfg: PlayByPromptConfig, prompt: str) -> list[tuple[str, Path]]:
+    """Builds the ordered list of (label, trajectory_path) steps for `prompt`.
+
+    Always starts with the bread trajectory and ends with the bread trajectory (using
+    `cfg.bread2_trajectory` for the end if that file exists, otherwise reusing `cfg.bread_trajectory`).
+    In between: every ingredient in `cfg.ingredient_order` that has an existing trajectory file, unless
+    `prompt` explicitly names specific ingredients -- in which case only those play, in the order they
+    were named. Ingredients with no recorded trajectory file yet are skipped with a printed warning
+    rather than aborting the whole run.
+
+    Raises `FileNotFoundError` if the bread trajectory itself is missing, since there's no sandwich
+    without it.
+    """
+    trajectories_dir = Path(cfg.trajectories_dir)
+
+    bread_path = _resolve_trajectory_path(trajectories_dir, cfg.bread_trajectory)
+    if not bread_path.is_file():
+        raise FileNotFoundError(
+            f"Bread trajectory '{bread_path}' not found. Record it with `lerobot-teleop-record` first, "
+            "or point --bread_trajectory at the right file."
+        )
+
+    bread2_path = _resolve_trajectory_path(trajectories_dir, cfg.bread2_trajectory)
+    if not bread2_path.is_file():
+        print(
+            f"No second-bread trajectory at '{bread2_path}' yet -- closing the sandwich with the first "
+            f"bread trajectory ('{bread_path.name}') again instead."
+        )
+        bread2_path = bread_path
+
+    requested = extract_requested_ingredients(prompt, list(cfg.ingredient_trajectories.keys()))
+    if requested is not None:
+        print(f"Specific ingredient(s) requested, in this order: {', '.join(requested) or '(none)'}")
+        ingredient_names = requested
+    else:
+        default_order = ", ".join(cfg.ingredient_order)
+        print(f"No specific ingredients named -- using the full default order: {default_order}")
+        ingredient_names = cfg.ingredient_order
+
+    plan: list[tuple[str, Path]] = [("bread", bread_path)]
+    for name in ingredient_names:
+        filename = cfg.ingredient_trajectories.get(name)
+        if filename is None:
+            print(f"  Skipping '{name}': no trajectory file configured for it.")
+            continue
+        path = _resolve_trajectory_path(trajectories_dir, filename)
+        if not path.is_file():
+            print(f"  Skipping '{name}': trajectory file '{path}' doesn't exist yet.")
+            continue
+        plan.append((name, path))
+    plan.append(("bread", bread2_path))
+
+    return plan
+
+
 def connect_robot_with_retries(robot: Robot, retries: int = 3, retry_delay_s: float = 2.0) -> None:
     """Connects to `robot`, retrying a few times on transient CAN/motor-bus communication errors (e.g.
     the `motorbridge` control-ack timeouts this hardware occasionally raises) before giving up.
@@ -304,12 +412,9 @@ def play_by_prompt(cfg: PlayByPromptConfig):
     else:
         raise ValueError('Pass either --prompt="..." or --voice=true.')
 
-    paths = list_trajectories(cfg.trajectories_dir)
-    if not paths:
-        raise FileNotFoundError(
-            f"No trajectory files found in '{cfg.trajectories_dir}'. Record one with "
-            "`lerobot-teleop-record` first."
-        )
+    # Fail fast (before touching Ollama/the camera) if the bread trajectory -- required for every run --
+    # hasn't been recorded yet.
+    _require_bread_trajectory(cfg)
 
     print(f"Asking the local LLM whether {prompt!r} means {cfg.task_description!r}...")
     ensure_server_running(cfg.host)
@@ -327,9 +432,10 @@ def play_by_prompt(cfg: PlayByPromptConfig):
     else:
         print("\nNo --camera configured, skipping the photo/ingredient check.")
 
-    print(f"\nMatched! Playing back {len(paths)} trajectory file(s) in this order:")
-    for p in paths:
-        print(f"  - {p.name}")
+    plan = build_trajectory_plan(cfg, prompt)
+    print(f"\nMatched! Playing back {len(plan)} trajectory step(s) in this order:")
+    for label, path in plan:
+        print(f"  - {label}: {path.name}")
 
     robot_action_processor = make_default_robot_action_processor()
     robot = make_robot_from_config(cfg.robot)
@@ -347,13 +453,13 @@ def play_by_prompt(cfg: PlayByPromptConfig):
 
     try:
         log_say(f"Running task: {cfg.task_description}", cfg.play_sounds)
-        for i, path in enumerate(paths):
+        for i, (label, path) in enumerate(plan):
             data = load_trajectory(path)
             frames = data["frames"]
             if not frames:
                 logger.warning(f"'{path}' has no frames, skipping.")
                 continue
-            print(f"\n--- [{i + 1}/{len(paths)}] Playing {path.name} ({len(frames)} frames) ---")
+            print(f"\n--- [{i + 1}/{len(plan)}] Playing {label} ({path.name}, {len(frames)} frames) ---")
             playback_loop(robot, frames, robot_action_processor, cfg.speed)
         log_say("Task complete", cfg.play_sounds)
     except KeyboardInterrupt:
