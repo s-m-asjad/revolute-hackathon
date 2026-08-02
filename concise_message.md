@@ -4,59 +4,65 @@
 
 ## Inspiration
 
-"Make me a sandwich" is the canonical joke request for a robot. It's a joke because it's hard: parse what someone wants and doesn't want, check what's actually on the table, then grip things that bend, slip, and tear. We built it.
+Everyone's made the joke. "Robot, make me a sandwich." We wanted to find out how hard it actually is.
+
+Pretty hard, it turns out. You have to understand what someone asked for, including the parts they left out. You have to know what's actually on the table. And then you have to pick up a slice of tomato without turning it into juice.
 
 ## What it does
 
-Say "Hey chef, make me a sandwich" and a 6-DOF arm builds one.
+You say "Hey chef, make me a sandwich." The arm makes one.
 
-Name your fillings and it plays only those, **in the order you said them** — "tomato then cheese" stacks differently from "cheese then tomato." Ask for a plain sandwich and it builds the house version: cucumber, tomato, cheese, lettuce. Bread goes down first and last. Before it moves, it photographs the station and reports which ingredients it can actually see.
+Name what you want and it uses only those, in the order you said them. Ask for tomato then cheese and that's the order you get. Ask for a plain sandwich and you get the house build: cucumber, tomato, cheese, lettuce. Bread on the bottom, bread on top.
 
-Everything runs on-device. No paid APIs, no cloud.
+Before it moves, it photographs the table and tells you what it can see.
+
+All of it runs on the Jetson. No cloud APIs. We didn't pay for anything.
 
 ## How we built it
 
-| Stage | Implementation |
+| Stage | What runs |
 |---|---|
-| Voice | Wake word → Whisper `tiny.en` on the laptop |
-| Intent | `qwen2.5:3b` via Ollama on the Jetson — is this a sandwich order? |
-| Vision | `qwen2.5vl:3b` photographs the station, reads ingredient labels |
-| Order parsing | Deterministic string matching — **not** an LLM |
-| Motion | Teleop demos recorded as 60 Hz JSON trajectories, replayed per ingredient |
-| Hardware | reBot B601-RS over SocketCAN · Jetson Orin Nano · USB cams · TPU compliant gripper |
+| Voice | Wake word, then Whisper `tiny.en` on the laptop |
+| Intent | `qwen2.5:3b` in Ollama on the Jetson |
+| Vision | `qwen2.5vl:3b`, reads the labels on the packaging |
+| Order | String matching in Python |
+| Motion | Teleop demos saved as 60 Hz JSON, replayed per ingredient |
+| Arm | Seeed reBot B601-RS over SocketCAN, TPU compliant gripper |
 
-Two decisions did most of the work.
+The gripper does more work than any of our code. The organizers printed it in TPU, and that flex is the only reason a slice of bread survives being picked up.
 
-**Parsing is dumb on purpose.** Sequence is semantic here — it's a stack, and the order determines the sandwich. A paraphrase-tolerant model is free to silently reorder or drop an item. A string matcher isn't. We gave the LLM the fuzzy job (did they ask for a sandwich?) and kept the exact job in code.
+We used a language model for exactly one thing: deciding whether what you said was a sandwich order. Everything after that is string matching.
 
-**Vision reads text, not food.** A 3B VLM asked to identify ham will confidently find ham next to a bag of shredded cheese. We prompt it to read the ingredient name printed on the packaging instead. That trades recall for precision, which is the right trade when a false positive means reaching into an empty bin.
+That sounds primitive. It's deliberate. Order matters when you're stacking things, and a model that's good at paraphrase is equally good at quietly reordering your list or dropping an item it decided was redundant. So the fuzzy question goes to the model and the exact one stays in code.
+
+Vision works the same way. Ask a 3B model whether there's ham on the table and it will find ham sitting next to a bag of shredded cheese, with total confidence. So we don't ask it to recognize food. We ask it to read the word printed on the package. That costs us recall, and we'll take it, because the failure we care about is the arm reaching into an empty bin.
 
 ## Challenges we ran into
 
-**Two 3B models don't fit.** Ollama keeps a model warm for 5 minutes after use. With the text and vision models both resident, the Jetson's shared 16 GB pool ran out mid-encode — `cudaMalloc failed`, HTTP 500. Fixed by unloading the text model (`keep_alive=0`) before loading the vision model, and shrinking both context windows to 1024/2048.
+Two 3B models don't fit in 16 GB. Ollama keeps a model warm for five minutes after you use it, so the text model was still sitting in memory when the vision model tried to encode a photo. `cudaMalloc failed`, HTTP 500, no useful error until we went digging in the Ollama log. Now we unload the text model before loading the vision one, and both run with smaller context windows.
 
-**Vision was too slow to demo.** Each call pays ~7 s just to encode the photo, so describing the scene and checking ingredients as two calls cost ~27 s warm. Merging them into one prompt, answered in one line, got it to ~11 s. `tegrastats` showed the GPU pinned at 99% — genuinely compute-bound, not misconfigured.
+Vision was also too slow to put in front of a judge. Roughly 7 seconds of every call is just encoding the image, so asking two questions cost about 27 seconds warm. Merging them into a single prompt got it to 11. `tegrastats` showed the GPU pinned at 99% the whole time, so that's the hardware talking, not a config mistake.
 
-**The arm had opinions.** The gripper multiplies the leader's angle by 6 and then clamps to the same range, so only the first 45° of leader travel did anything. Wrist roll has a hard mechanical stop that no config change moves — we found that the expensive way, by widening the limit first. Rolling the leader past 180° could flip the follower to the opposite limit, fixed with an unwrap patch. CAN handoff after a teleop session needed connect retries.
+The arm ate most of a day. The gripper multiplies the leader's angle by six and then clamps the result back into the same range it started in, so only the first 45 degrees of leader travel did anything at all. Wrist roll has a mechanical stop that no config value will move, which we learned by widening the software limit and watching nothing change. Rolling the leader past 180 degrees could flip the follower to the opposite limit.
 
-**Replay is harder than demonstration.** A grasp that works once doesn't survive ten runs. Most of our time went into approach angles, speeds, and grasp timing — plus custom containers so each ingredient presents itself to the gripper the same way every time.
+And then the part nobody warns you about. A grasp that works once doesn't work ten times. Most of our hours went into approach angles and the exact moment to close the gripper. We ended up building a container for each ingredient so it presents itself the same way on every run. Staging the food mattered more than tuning the code, which is not what we expected going in.
 
 ## Accomplishments that we're proud of
 
-Voice to sandwich, end to end, on free local models. Wake word, speech-to-text, intent, vision, order parsing, and compliant manipulation of soft food all had to work in sequence — and the layers land without drops.
+It works end to end. You talk, a sandwich shows up.
 
-We also built a failure ladder that keeps the demo alive: full auto, then prompt plus trajectories with vision report-only, then trajectory playback, then live teleop. The last rung still makes a sandwich in front of a judge.
+We also built a fallback ladder, because demos break. Full auto first. If vision gets weird, prompt plus trajectories with vision only reporting. If the prompt path breaks, straight playback. If all of that breaks, we drive the arm by hand with the leader and still hand someone a sandwich.
 
 ## What we learned
 
-Most of soft-object manipulation is solved before any code runs — in the compliant gripper and in how you stage the ingredients. The rest is earned back through patient trajectory tuning.
+Most of soft-object manipulation happens before any code runs. It's in the gripper, and in how you lay the ingredients out.
 
-The other lesson was where *not* to put a model. Language models are good at ambiguity and bad at guarantees. Every place we needed a guarantee — ingredient order, label identity — we took the model out.
+The other thing we kept relearning: every time we needed a guarantee, the language model was the wrong tool. It's good at "did they mean a sandwich." It's bad at "don't change the order." Sorting out which questions were which took a few tries.
 
-A 3B model on a Jetson is enough for intent and perception at this scale. The constraint was memory and latency, not capability.
+A 3B model on a Jetson was plenty for this. Memory was the wall, not intelligence.
 
 ## What's next
 
-Use the cameras to locate ingredients rather than just confirm them, so the station doesn't have to be perfectly staged. Verify each layer landed before placing the next. Move from replaying trajectories to per-ingredient ACT policies that generalize across placements. Streaming speech-to-text with barge-in.
+Use the cameras to find the ingredients instead of just confirming they exist, so the station doesn't have to be taped down. Check that each layer landed before adding the next. Move from replaying recorded motions to something that survives the plate being a few inches off.
 
-The pipeline isn't really about sandwiches — it's voice to perception to manipulation, for anyone who wants to ask a robot in plain language to assemble something from parts.
+Sandwiches were the excuse. What we want is to say a sentence out loud and have a physical thing get built, with nothing in the loop that needs an internet connection. We're not there yet.
