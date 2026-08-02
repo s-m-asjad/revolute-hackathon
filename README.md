@@ -1,159 +1,414 @@
-<p align="center">
-  <img alt="LeRobot, Hugging Face Robotics Library" src="./media/readme/lerobot-logo-thumbnail.png" width="100%">
-</p>
-
 <div align="center">
 
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/nightly.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/nightly.yml?query=branch%3Amain)
-[![Python versions](https://img.shields.io/pypi/pyversions/lerobot)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/huggingface/lerobot/blob/main/LICENSE)
-[![Status](https://img.shields.io/pypi/status/lerobot)](https://pypi.org/project/lerobot/)
-[![Version](https://img.shields.io/pypi/v/lerobot)](https://pypi.org/project/lerobot/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.1-ff69b4.svg)](https://github.com/huggingface/lerobot/blob/main/CODE_OF_CONDUCT.md)
-[![Discord](https://img.shields.io/badge/Discord-Join_Us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/q8Dzzpym3f)
+# 🥪 ORDER UP
+### Voice-Conditioned Sandwich Assembly on a reBot Arm
+
+**Revolute Hackathon 2026** · FabLab Kendall · Cambridge, MA  
+*Physical AI · Cooking with robot arms · Seeed reBot B601-RS + Jetson Orin Nano*
+
+[![Revolute](https://img.shields.io/badge/Revolute-2026-E94560?style=for-the-badge)](https://revolutehack.com/)
+[![Hardware](https://img.shields.io/badge/Arm-reBot%20B601--RS-0F3460?style=for-the-badge)](https://www.seeedstudio.com/)
+[![Edge](https://img.shields.io/badge/Edge-Jetson%20Orin%20Nano-76B900?style=for-the-badge&logo=nvidia&logoColor=white)](https://www.seeedstudio.com/)
+[![Stack](https://img.shields.io/badge/Stack-LeRobot%20%2B%20Ollama-FFD21E?style=for-the-badge)](https://github.com/huggingface/lerobot)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue?style=for-the-badge)](./LICENSE)
+
+<br/>
+
+**Say the order. See the station. Serve the sandwich.**
+
+*A judge walks up, speaks a sandwich order, and a 6‑DOF arm executes recorded kitchen skills on a fixed deli station — with on-device language + vision, and a teleop fallback so the deli never goes down.*
+
+<br/>
+
+[Quick Start](#-quick-start) ·
+[Architecture](#-system-architecture) ·
+[Demo Gallery](#-demo-gallery--video) ·
+[Judging Map](#-how-we-map-to-judging-criteria) ·
+[Reproduce](#-reproduce-the-demo)
 
 </div>
 
-**LeRobot** aims to provide models, datasets, and tools for real-world robotics in PyTorch. The goal is to lower the barrier to entry so that everyone can contribute to and benefit from shared datasets and pretrained models.
+---
 
-🤗 A hardware-agnostic, Python-native interface that standardizes control across diverse platforms, from low-cost arms (SO-100) to humanoids.
+## 🎬 Demo Gallery / Video
 
-🤗 A standardized, scalable LeRobotDataset format (Parquet + MP4 or images) hosted on the Hugging Face Hub, enabling efficient storage, streaming and visualization of massive robotic datasets.
+> **Drop final clips in [`video/`](./video/).**  
+> GitHub will render MP4s inline once files land. Until then, placeholders mark the collage.
 
-🤗 State-of-the-art policies that have been shown to transfer to the real-world ready for training and deployment.
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <h3>01 · One-minute showcase</h3>
+      <p><em>Voice → intent → sandwich → “Order up!”</em></p>
+      <!-- After upload: <video src="./video/01-one-minute-showcase.mp4" controls width="100%"></video> -->
+      <a href="./video/">
+        <img src="https://via.placeholder.com/640x360/1a1a2e/e94560?text=01+·+1-min+Showcase+%0A%0A%5Bdrop+file+in+video%2F%5D" width="100%" alt="1-min showcase placeholder"/>
+      </a>
+      <p><code>video/01-one-minute-showcase.mp4</code></p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <h3>02 · Live order (science fair)</h3>
+      <p><em>Judge places a custom order at the table</em></p>
+      <a href="./video/">
+        <img src="https://via.placeholder.com/640x360/16213e/ffffff?text=02+·+Live+Order+%0A%0A%5Bdrop+file+in+video%2F%5D" width="100%" alt="Live order placeholder"/>
+      </a>
+      <p><code>video/02-live-order.mp4</code></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <h3>03 · Teleop → trajectory capture</h3>
+      <p><em>Leader arm demos that become skills</em></p>
+      <a href="./video/">
+        <img src="https://via.placeholder.com/640x360/0f3460/ffd21e?text=03+·+Teleop+Capture+%0A%0A%5Bdrop+file+in+video%2F%5D" width="100%" alt="Teleop capture placeholder"/>
+      </a>
+      <p><code>video/03-teleop-capture.mp4</code></p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <h3>04 · Vision ingredient gate</h3>
+      <p><em>Qwen2.5-VL checks labeled mise en place</em></p>
+      <a href="./video/">
+        <img src="https://via.placeholder.com/640x360/533483/ffffff?text=04+·+Vision+Gate+%0A%0A%5Bdrop+file+in+video%2F%5D" width="100%" alt="Vision gate placeholder"/>
+      </a>
+      <p><code>video/04-vision-ingredient-gate.mp4</code></p>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center" valign="top">
+      <h3>05 · Failure recovery (teleop handoff)</h3>
+      <p><em>Graceful degradation is a feature — not an apology</em></p>
+      <a href="./video/">
+        <img src="https://via.placeholder.com/960x320/1a1a2e/e94560?text=05+·+Fallback+Storyboard+%0A%0A%5Bdrop+file+in+video%2F%5D" width="80%" alt="Fallback placeholder"/>
+      </a>
+      <p><code>video/05-fallback-teleop.mp4</code></p>
+    </td>
+  </tr>
+</table>
 
-🤗 Comprehensive support for the open-source ecosystem to democratize physical AI.
+<details>
+<summary><b>How to publish videos into this gallery</b></summary>
 
-## Quick Start
+1. Export short MP4s (H.264, ≤ ~50–80 MB each for comfortable GitHub browsing; larger files → Git LFS or external link).
+2. Place them in [`video/`](./video/) using the filenames above (or update this README).
+3. Uncomment the `<video src="...">` tags (or keep clickable placeholders).
+4. Prefer **one hero 60s clip** for Devpost/Hackster + this gallery.
 
-LeRobot can be installed directly from PyPI.
+</details>
 
-```bash
-pip install lerobot
-lerobot-info
+---
+
+## 🧠 What we built
+
+**Order Up** is a **deli station**, not a free-form chef.
+
+| Layer | Behavior |
+|-------|----------|
+| **Language** | Local **Ollama** (`qwen2.5:3b`) on Jetson decides if the utterance means *make a sandwich* (paraphrase-tolerant) |
+| **Vision** | **Qwen2.5-VL 3B** photographs the station and checks **text-labeled** ingredients (precision > guessy recognition) |
+| **Motion** | Teleop-recorded **trajectories** in [`trajectories/`](./trajectories/) replayed on the **reBot B601-RS** follower |
+| **Voice (optional front door)** | Local **Whisper** STT ([`voice_agent/`](./voice_agent/)) → text → Ollama — no cloud Whisper bill |
+| **Safety net** | Leader-arm teleop + kill switches so the live demo still *serves* if a model flakes |
+
+### Why this design wins weekends
+
+- **Narrow & repeatable** — fixed bins, fixed plate, open-face assembly  
+- **On-device Physical AI** — language + vision + control on Jetson, not a laptop theater  
+- **Product-shaped** — a guest can order; the system confirms and executes  
+- **Honest robotics** — we document motor limits, CAN quirks, VRAM tricks, and false-positive vision fixes in [`commands.txt`](./commands.txt)
+
+---
+
+## 🏗️ System architecture
+
+```text
+                    ┌─────────────────────────────────────┐
+                    │         GUEST / JUDGE               │
+                    │   "Make me a sandwich with ham"     │
+                    └──────────────┬──────────────────────┘
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+     ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
+     │  Voice (opt.)  │   │  Typed prompt  │   │  UI buttons    │
+     │  Whisper tiny  │   │  CLI / script  │   │  (fallback)    │
+     │  Mac or Jetson │   │                │   │                │
+     └───────┬────────┘   └───────┬────────┘   └───────┬────────┘
+             │ text               │ text               │ structured
+             └────────────────────┼────────────────────┘
+                                  ▼
+                    ┌─────────────────────────────────────┐
+                    │   Jetson Orin Nano · Ollama         │
+                    │   qwen2.5:3b  → intent gate         │
+                    │   qwen2.5vl:3b → ingredient check   │
+                    │   (models unloaded to fit memory)   │
+                    └──────────────────┬──────────────────┘
+                                       │ play skills
+                                       ▼
+                    ┌─────────────────────────────────────┐
+                    │  Trajectory library                 │
+                    │  trajectories/*.json  (60 Hz)       │
+                    │  recorded via leader → follower     │
+                    └──────────────────┬──────────────────┘
+                                       │
+                                       ▼
+                    ┌─────────────────────────────────────┐
+                    │  reBot B601-RS  ·  SocketCAN        │
+                    │  + reBot 102 leader (teleop / data) │
+                    │  + USB cams (overhead / wrist)      │
+                    └─────────────────────────────────────┘
 ```
 
-> [!IMPORTANT]
-> For detailed installation guide, please see the [Installation Documentation](https://huggingface.co/docs/lerobot/installation).
+### Hardware (event kit)
 
-## Robots & Control
+| Qty | Device | Role |
+|----:|--------|------|
+| 1 | **Seeed reBot Arm B601-RS** | Follower / worker (6‑DOF + gripper) |
+| 1 | **reBot Arm 102 leader** | Teleoperation & trajectory capture |
+| 1 | **reComputer Jetson Orin Nano** | Edge LLM/VLM + control host |
+| 2 | **USB cameras** | Station view / ingredient check |
+
+### Software pillars
+
+| Pillar | Implementation |
+|--------|----------------|
+| Control & data | [LeRobot](https://github.com/huggingface/lerobot) + Seeed reBot plugins (`seeed_b601_rs_follower`, `rebot_arm_102_leader`) |
+| Skills | JSON trajectories · [`lerobot-teleop-record`](./commands.txt) · [`lerobot-playback`](./commands.txt) |
+| Intent | Ollama · `lerobot-play-by-prompt` · paraphrase match for sandwich intent |
+| Vision gate | Camera frame → Qwen2.5-VL · **text labels required** for precision |
+| Voice agent | [`voice_agent/`](./voice_agent/) · free local Whisper · HTTP to Ollama |
+
+---
+
+## ✨ Highlights that show technical depth
+
+<details open>
+<summary><b>Edge LLM + VLM under real memory pressure</b></summary>
+
+- Dual 3B models on Jetson **cannot** both stay warm — we hit `cudaMalloc failed` with default `keep_alive`.
+- Fix: **unload text model** (`keep_alive=0`) before vision; shrink context windows (1024/2048).
+- Vision latency: merge description + ingredient check into **one** Ollama call (~11 s warm vs ~27 s for two).
+
+</details>
+
+<details>
+<summary><b>Vision that prefers labels over vibes</b></summary>
+
+A 3B VLM guessing “ham” next to a cheese bag is a demo killer.  
+Our prompt requires the model to **read the ingredient name as text** on packaging/cards — trading recall for **precision** so the gate doesn’t green-light missing food.
+
+</details>
+
+<details>
+<summary><b>Hardware-honest control notes</b></summary>
+
+Documented and versioned in-repo:
+
+- `max_relative_target` speed caps for safer teleop  
+- wrist_roll **mechanical stop** (don’t widen past hardware)  
+- `leader_unwrap.patch` for wraparound jumps past ±180°  
+- gripper scale vs clamp (mapping travel without lying about torque control)  
+- CAN connect retries after teleop handoff  
+
+See [`commands.txt`](./commands.txt) and [`leader_unwrap.patch`](./leader_unwrap.patch).
+
+</details>
+
+<details>
+<summary><b>Graceful product failure modes</b></summary>
+
+| Priority | Mode |
+|:--------:|------|
+| 1 | Full auto: prompt + vision + trajectory sequence |
+| 2 | Prompt + trajectories (vision report-only) |
+| 3 | Trajectory playback only |
+| 4 | Live teleop assembly with the leader arm |
+
+**#4 still makes a sandwich in front of judges.**
+
+</details>
+
+---
+
+## 🚀 Quick start
+
+### 0. Repo map (what judges should open)
+
+```text
+.
+├── README.md                 ← you are here
+├── video/                    ← demo collage (upload MP4s here)
+├── voice_agent/              ← STT → Ollama client (Mac/Linux)
+├── trajectories/             ← recorded sandwich skills (JSON @ 60 Hz)
+│     rscheese / rscucumber / srstomato / first_bread / …
+├── commands.txt              ← day-of runbook (calibrate · teleop · prompt)
+├── leader_unwrap.patch       ← leader wrist wrap fix
+└── src/lerobot/              ← LeRobot core (upstream + team integrations)
+```
+
+### 1. Robot bring-up (Jetson)
+
+```bash
+# CAN interface (name may be can0 / can2 on your kit)
+export PCAN_IF=can0
+sudo ip link set $PCAN_IF down 2>/dev/null || true
+sudo ip link set $PCAN_IF type can bitrate 1000000 restart-ms 100
+sudo ip link set $PCAN_IF up
+sudo chmod 666 /dev/ttyUSB0   # leader UART — adjust path
+
+# Calibrate once per machine
+lerobot-calibrate \
+  --robot.type=seeed_b601_rs_follower \
+  --robot.port="$PCAN_IF" \
+  --robot.id=follower1 \
+  --robot.can_adapter=socketcan
+```
+
+Full day-of recipes: **[`commands.txt`](./commands.txt)**.
+
+### 2. Capture a skill
+
+```bash
+lerobot-teleop-record \
+  --robot.type=seeed_b601_rs_follower \
+  --robot.port="$PCAN_IF" \
+  --robot.id=follower1 \
+  --robot.can_adapter=socketcan \
+  --teleop.type=rebot_arm_102_leader \
+  --teleop.port=/dev/ttyUSB0 \
+  --teleop.id=rebot_arm_102_leader
+# r = record · s = save · q = quit  → trajectories/<name>.json
+```
+
+### 3. Language → motion
+
+```bash
+# Ensure Ollama is up (auto-started by the tool if configured)
+~/.local/bin/ollama serve &
+
+lerobot-play-by-prompt \
+  --robot.type=seeed_b601_rs_follower \
+  --robot.port="$PCAN_IF" \
+  --robot.id=follower1 \
+  --robot.can_adapter=socketcan \
+  --prompt="make a sandwich" \
+  --camera=/dev/video2 \
+  --ingredients="[bread, cheese, ham]"
+```
+
+### 4. Voice front door (laptop or Jetson)
+
+```bash
+cd voice_agent
+./install_whisper.sh              # free local tiny.en — no API key
+python voice_to_ollama.py \
+  --host JETSON_IP:11434 \
+  --ollama-model qwen2.5:3b \
+  --duration 5
+```
+
+---
+
+## 🧪 Demo script (science-fair table)
+
+1. **Station ready** — taped bins, labeled cards, plate, E-stop known  
+2. **Cold open** — “We’re Order Up: speak a sandwich order.”  
+3. **Live order** — judge speaks or types a sandwich phrase  
+4. **Vision beat** — show console: present / missing ingredients  
+5. **Motion beat** — trajectories execute; open-face stack appears  
+6. **Close** — “Order up!” + pointer to this README + 1‑min video  
+7. **If anything fails** — seamless teleop finish (we practice the handoff)
+
+**Success metric:** base bread + ≥1 topping, three clean runs, no unplanned arm motion.
+
+---
+
+## 📊 How we map to judging criteria
+
+Official Revolute scoring (100 pts):
+
+| Category | Pts | How this repo + demo address it |
+|----------|----:|----------------------------------|
+| **Documentation completeness** | **40** | |
+| · Presentation deck | 5 | Organizer/team deck assets in repo (`Revolute Hackathon.pdf`) + external drive/PPT link in submission |
+| · **GitHub + versioned code + README** | **10** | This document · [`commands.txt`](./commands.txt) · [`voice_agent/`](./voice_agent/) · trajectory artifacts · patches · commit history |
+| · Live demo | 15 | Table script above · kill-switch ladder · fixed station |
+| · Demo video + project intro | 10 | [`video/`](./video/) collage + Devpost/Hackster upload |
+| **Technical difficulty** | **30** | |
+| · Ambition | 10 | On-device LLM + VLM + multi-trajectory skills + optional STT |
+| · Accuracy | 10 | Label-based vision gate · intent match · calibrated teleop paths |
+| · Consistency | 10 | Fixed layouts · speed caps · connect retries · report-only → enforce flags |
+| **Product / Taste** | **30** | |
+| · Creativity | 10 | Voice-conditioned deli product, not a random pick-and-place |
+| · Taste / Edibility | 10 | Real ingredients / food-safe station (H‑Mart gift cards welcome 😉) |
+| · Chef’s opinion | 10 | Clean mise en place · open-face plating · “somewhat edible” bar cleared |
+
+---
+
+## 📁 Repository guide
+
+| Path | Purpose |
+|------|---------|
+| [`voice_agent/`](./voice_agent/) | Cross-platform mic → local Whisper → Ollama client |
+| [`trajectories/`](./trajectories/) | Skill library JSON (cheese, cucumber, tomato, bread, …) |
+| [`commands.txt`](./commands.txt) | Operator runbook (the real “how we run it”) |
+| [`leader_unwrap.patch`](./leader_unwrap.patch) | Leader wrist wrap fix |
+| [`video/`](./video/) | **Demo collage** (upload finals here) |
+| [`src/lerobot/`](./src/lerobot/) | LeRobot foundation (Apache-2.0) |
+| [`tests/`](./tests/) | Upstream + integration test suite |
+
+---
+
+## 🛡️ Safety
+
+- Keep **E-stop / power** within reach; never reach into bins during policy/playback.  
+- After power or signal glitches: **stop code → home → reconnect** (Seeed guidance).  
+- `max_relative_target` limits per-cycle jumps during teleop.  
+- Vision/language never move the arm unless intent gate passes (non-sandwich prompts do nothing).
+
+---
+
+## 👥 Team & event
+
+| | |
+|--|--|
+| **Event** | [Revolute 2026](https://revolutehack.com/) — Boston’s Physical AI / robotics hackathon |
+| **Venue** | FabLab Kendall · 325 Main St, Cambridge |
+| **Theme** | Cooking with robot arms |
+| **Hardware partners** | Seeed Studio reBot + reComputer Jetson |
+| **Framework** | Hugging Face LeRobot (this tree is a working hackathon fork with team extensions) |
+
+> Built in ~48 hours. Optimized for a **reliable live demo**, not a paper.
+
+---
+
+## 🗺️ Roadmap (post-demo stretch)
+
+- [ ] Per-ingredient ACT policies trained from teleop datasets  
+- [ ] Closed-face top-bread skill  
+- [ ] Streaming STT with barge-in cancel  
+- [ ] Multi-order queue / “hold the tomato” composition  
+- [ ] Publish 1‑min hero video to Devpost/Hackster  
+
+---
+
+## 📜 License & attribution
+
+- Project code & docs in this fork: see [`LICENSE`](./LICENSE) (Apache-2.0 via LeRobot lineage).  
+- LeRobot © Hugging Face contributors.  
+- Hardware designs & SDKs © Seeed Studio / respective vendors.  
+- Models via Ollama model library (Qwen family) under their upstream licenses.
+
+---
 
 <div align="center">
-  <img src="./media/readme/robots_control_video.webp" width="640px" alt="Reachy 2 Demo">
-</div>
 
-LeRobot provides a unified `Robot` class interface that decouples control logic from hardware specifics. It supports a wide range of robots and teleoperation devices.
+### *Order up.*
 
-```python
-from lerobot.robots.myrobot import MyRobot
+**Documentation is part of the product.**  
+If you’re a judge: thank you — open [`video/`](./video/), skim [`commands.txt`](./commands.txt), and ask us for a live sandwich.
 
-# Connect to a robot
-robot = MyRobot(config=...)
-robot.connect()
+<br/>
 
-# Read observation and send action
-obs = robot.get_observation()
-action = model.select_action(obs)
-robot.send_action(action)
-```
+<sub>Revolute Hackathon 2026 · Cambridge, MA · Physical AI should be delicious.</sub>
 
-**Supported Hardware:** SO100, LeKiwi, Koch, HopeJR, OMX, EarthRover, Reachy2, Gamepads, Keyboards, Phones, OpenARM, Unitree G1.
-
-While these devices are natively integrated into the LeRobot codebase, the library is designed to be extensible. You can easily implement the Robot interface to utilize LeRobot's data collection, training, and visualization tools for your own custom robot.
-
-For detailed hardware setup guides, see the [Hardware Documentation](https://huggingface.co/docs/lerobot/integrate_hardware).
-
-## LeRobot Dataset
-
-To solve the data fragmentation problem in robotics, we utilize the **LeRobotDataset** format.
-
-- **Structure:** Synchronized MP4 videos (or images) for vision and Parquet files for state/action data.
-- **HF Hub Integration:** Explore thousands of robotics datasets on the [Hugging Face Hub](https://huggingface.co/lerobot).
-- **Tools:** Seamlessly delete episodes, split by indices/fractions, add/remove features, and merge multiple datasets.
-
-```python
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-# Load a dataset from the Hub
-dataset = LeRobotDataset("lerobot/aloha_mobile_cabinet")
-
-# Access data (automatically handles video decoding)
-episode_index=0
-print(f"{dataset[episode_index]['action'].shape=}\n")
-```
-
-Learn more about it in the [LeRobotDataset Documentation](https://huggingface.co/docs/lerobot/lerobot-dataset-v3)
-
-## SoTA Models
-
-LeRobot implements state-of-the-art policies in pure PyTorch, covering Imitation Learning, Reinforcement Learning, and Vision-Language-Action (VLA) models, with more coming soon. It also provides you with the tools to instrument and inspect your training process.
-
-<p align="center">
-  <img alt="Gr00t Architecture" src="./media/readme/VLA_architecture.jpg" width="640px">
-</p>
-
-Training a policy is as simple as running a script configuration:
-
-```bash
-lerobot-train \
-  --policy=act \
-  --dataset.repo_id=lerobot/aloha_mobile_cabinet
-```
-
-| Category                   | Models                                                                                                                                                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Imitation Learning**     | [ACT](./docs/source/policy_act_README.md), [Diffusion](./docs/source/policy_diffusion_README.md), [VQ-BeT](./docs/source/policy_vqbet_README.md)                                                             |
-| **Reinforcement Learning** | [HIL-SERL](./docs/source/hilserl.mdx), [TDMPC](./docs/source/policy_tdmpc_README.md) & QC-FQL (coming soon)                                                                                                  |
-| **VLAs Models**            | [Pi0Fast](./docs/source/pi0fast.mdx), [Pi0.5](./docs/source/pi05.mdx), [GR00T N1.5](./docs/source/policy_groot_README.md), [SmolVLA](./docs/source/policy_smolvla_README.md), [XVLA](./docs/source/xvla.mdx) |
-
-Similarly to the hardware, you can easily implement your own policy & leverage LeRobot's data collection, training, and visualization tools, and share your model to the HF Hub
-
-For detailed policy setup guides, see the [Policy Documentation](https://huggingface.co/docs/lerobot/bring_your_own_policies).
-
-## Inference & Evaluation
-
-Evaluate your policies in simulation or on real hardware using the unified evaluation script. LeRobot supports standard benchmarks like **LIBERO**, **MetaWorld** and more to come.
-
-```bash
-# Evaluate a policy on the LIBERO benchmark
-lerobot-eval \
-  --policy.path=lerobot/pi0_libero_finetuned \
-  --env.type=libero \
-  --env.task=libero_object \
-  --eval.n_episodes=10
-```
-
-Learn how to implement your own simulation environment or benchmark and distribute it from the HF Hub by following the [EnvHub Documentation](https://huggingface.co/docs/lerobot/envhub)
-
-## Resources
-
-- **[Documentation](https://huggingface.co/docs/lerobot/index):** The complete guide to tutorials & API.
-- **[Chinese Tutorials: LeRobot+SO-ARM101中文教程-同济子豪兄](https://zihao-ai.feishu.cn/wiki/space/7589642043471924447)** Detailed doc for assembling, teleoperate, dataset, train, deploy. Verified by Seed Studio and 5 global hackathon players.
-- **[Discord](https://discord.gg/q8Dzzpym3f):** Join the `LeRobot` server to discuss with the community.
-- **[X](https://x.com/LeRobotHF):** Follow us on X to stay up-to-date with the latest developments.
-- **[Robot Learning Tutorial](https://huggingface.co/spaces/lerobot/robot-learning-tutorial):** A free, hands-on course to learn robot learning using LeRobot.
-
-## Citation
-
-If you use LeRobot in your research, please cite:
-
-```bibtex
-@misc{cadene2024lerobot,
-    author = {Cadene, Remi and Alibert, Simon and Soare, Alexander and Gallouedec, Quentin and Zouitine, Adil and Palma, Steven and Kooijmans, Pepijn and Aractingi, Michel and Shukor, Mustafa and Aubakirova, Dana and Russi, Martino and Capuano, Francesco and Pascal, Caroline and Choghari, Jade and Moss, Jess and Wolf, Thomas},
-    title = {LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch},
-    howpublished = "\url{https://github.com/huggingface/lerobot}",
-    year = {2024}
-}
-```
-
-## Contribute
-
-We welcome contributions from everyone in the community! To get started, please read our [CONTRIBUTING.md](./CONTRIBUTING.md) guide. Whether you're adding a new feature, improving documentation, or fixing a bug, your help and feedback are invaluable. We're incredibly excited about the future of open-source robotics and can't wait to work with you on what's next—thank you for your support!
-
-<p align="center">
-  <img alt="SO101 Video" src="./media/readme/so100_video.webp" width="640px">
-</p>
-
-<div align="center">
-<sub>Built by the <a href="https://huggingface.co/lerobot">LeRobot</a> team at <a href="https://huggingface.co">Hugging Face</a> with ❤️</sub>
 </div>
