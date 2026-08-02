@@ -143,3 +143,82 @@ next to each item on the table for the check to recognize it. Verified: with onl
 "Cabot Mexican Cheese" bag on the table (no other labeled items), it now correctly
 reports present=[cheese], missing=[bread, ham, tomato] instead of guessing at the
 other items visually.
+
+--- Voice input instead of typing --prompt (local Whisper, no cloud/API key) ---
+
+`lerobot-play-by-prompt` can now capture the instruction from a mic instead of
+`--prompt="..."`, using local Whisper to transcribe -- everything still runs offline,
+same as the Ollama classify/vision steps. This replaces the CLI --prompt string with
+whatever you say; it's unrelated to voice_agent/ (that folder's voice_to_ollama.py is a
+separate standalone script meant to run on a laptop and hit a Jetson's Ollama over the
+network -- this integration instead runs entirely on this machine, feeding straight
+into the existing classify_match/ingredient-check/playback pipeline above).
+
+Install once (adds sounddevice + openai-whisper):
+  pip install lerobot[voice]
+  # or lighter/faster on CPU: pip install faster-whisper
+Turned out portaudio19-dev wasn't needed on this Jetson -- sounddevice's wheel already
+works against the system's existing libportaudio2.
+
+Usage -- add --voice=true and drop --prompt entirely:
+
+lerobot-play-by-prompt --robot.type=seeed_b601_rs_follower --robot.port="$PCAN_IF" --robot.id=follower1 --robot.can_adapter=socketcan --voice=true 
+
+Console output walks through each step explicitly:
+  "Get ready to speak your instruction..."
+  "Recording started -- say your instruction now, then press Enter to stop
+   (auto-stops after 60s)."         <- mic is live now, say "Hey Chef, make a sandwich"
+  "Heard: 'hey chef make a sandwich'"        <- raw transcript
+  "Wake phrase 'hey chef' detected."         <- confirms the wake word was found
+  "Prompt: 'make a sandwich'"                <- what's actually sent to the LLM match step
+then it continues exactly like a typed --prompt would (LLM match check, optional
+vision ingredient check, then playback).
+
+If "Hey Chef" isn't heard anywhere in the transcript, the whole recording is discarded
+and nothing runs (protects against background chatter accidentally triggering the
+robot). Change the phrase with --voice_wake_word="..." (case-insensitive), or set
+--voice_wake_word="" to disable the wake-word requirement and use the full transcript.
+
+Useful flags:
+  --voice_wake_word="hey chef"  wake phrase required before the instruction (default)
+  --voice_max_duration=20       lower the auto-stop safety cap (default 60s)
+  --voice_model=base.en         bigger/more accurate Whisper model (default tiny.en)
+  --voice_engine=faster         force faster-whisper instead of auto-detect
+  --voice_device=N              pick a specific mic (see --voice_list_devices=true)
+  --voice_list_devices=true     list mics and exit, don't touch the robot
+
+Untested on hardware -- verified the flags parse and land in the config; the mic
+recording + local Whisper transcription path itself is the same approach already
+exercised standalone in voice_agent/voice_to_ollama.py, just reimplemented in
+src/lerobot/utils/voice_input.py so it plugs straight into lerobot-play-by-prompt
+instead of shelling out to Ollama's /api/generate with the sandwich-order system
+prompt.
+
+Silent-recording bug (found + fixed testing on real hardware): first real run recorded
+fine (5-12s captured, no errors) but Whisper always came back with an empty transcript.
+Root cause was audio routing, not Whisper or Ubuntu itself: this Jetson runs
+PulseAudio, which has already claimed the USB mic's raw ALSA device
+(/dev/snd/pcmC2D0c) exclusively (confirmed via `fuser -v`). sounddevice/PortAudio's
+ALSA backend then falls back to the plain ALSA "default" pseudo-device, which on this
+box silently resolves to a different, unrelated/suspended source instead of erroring
+-- so it "records" 100% silence with zero indication anything's wrong. `pactl list
+short sources` showed the real mic as a separate, RUNNING PulseAudio source the whole
+time (alsa_input.usb-..."1080P_USB_Camera"...-mono-fallback).
+
+Fix: --voice=true (with no --voice_device override) now records via `arecord -D
+pulse`, going through PulseAudio properly instead of fighting it, and auto-targets a
+USB-mic-named PulseAudio source via `PULSE_SOURCE` if one is found (see
+`pactl list short sources` to check yours). Verified end-to-end on this hardware:
+peak level went from ~0.000 (silent, old path) to a real ~0.02-0.04+ (ambient
+room noise/speech, new path), and Whisper now returns actual text instead of "".
+Falls back to the old sounddevice/PortAudio path if arecord/PulseAudio aren't
+available (e.g. macOS) or if you explicitly pass --voice_device=N.
+
+Also added a peak-level readout after every recording ("Recorded 2.4s (peak level:
+0.025).") plus a warning if it's near-zero, so a broken mic path is obvious
+immediately instead of only showing up later as a mysterious empty transcript.
+
+Note: Whisper can hallucinate short phrases on very quiet/ambient-only audio (e.g.
+transcribed room tone as "It's going to be patient." with no one speaking) -- this is
+a known Whisper quirk on near-silent input, not a bug. Speak clearly and reasonably
+close to the mic for a real transcript.

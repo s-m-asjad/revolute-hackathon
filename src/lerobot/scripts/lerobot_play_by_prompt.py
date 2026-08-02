@@ -45,6 +45,22 @@ lerobot-play-by-prompt \
 If Ollama isn't already running, this starts it automatically (`ollama serve`) and pulls whichever
 model(s) are needed the first time they're used (default text model `qwen2.5:3b`, ~2GB; default vision
 model `qwen2.5vl:3b`, ~3.2GB). Pass `--camera=""` to skip the photo/ingredient check entirely.
+
+Instead of typing `--prompt`, pass `--voice=true` to speak the instruction into a mic instead: it records
+until you press Enter, then transcribes locally with Whisper (`pip install lerobot[voice]`) -- no cloud
+service, no API key. Say the wake phrase "Hey Chef" (configurable via `--voice_wake_word`) before your
+instruction, e.g. "Hey Chef, make a sandwich" -- only the part after the wake phrase is used as the
+prompt. If the wake phrase isn't heard, the recording is discarded (nothing runs). The extracted
+instruction is then used exactly like `--prompt` would be:
+
+```shell
+lerobot-play-by-prompt \
+    --robot.type=seeed_b601_rs_follower \
+    --robot.port="$PCAN_IF" \
+    --robot.id=follower1 \
+    --robot.can_adapter=socketcan \
+    --voice=true
+```
 """
 
 import logging
@@ -91,6 +107,7 @@ from lerobot.utils.ollama_client import (
 )
 from lerobot.utils.trajectory_io import list_trajectories, load_trajectory
 from lerobot.utils.utils import init_logging, log_say
+from lerobot.utils.voice_input import extract_after_wake_word, record_and_transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +115,31 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PlayByPromptConfig:
     robot: RobotConfig
-    # Free-text instruction to classify, e.g. "make a sandwich".
-    prompt: str
+    # Free-text instruction to classify, e.g. "make a sandwich". Required unless `voice=true`, in which
+    # case the instruction is captured from the mic instead.
+    prompt: str | None = None
+    # Instead of reading `prompt` from the command line, record from the mic and transcribe it locally
+    # with Whisper (`pip install lerobot[voice]`). The transcript is then used exactly like `prompt`.
+    voice: bool = False
+    # Safety cap (in seconds) on mic recording when `voice=true` -- recording actually stops as soon as
+    # you press Enter, this only kicks in if you never do.
+    voice_max_duration: float = 60.0
+    # Local Whisper model size used for transcription (only relevant when `voice=true`).
+    voice_model: str = "tiny.en"
+    # Speech-to-text backend: "auto" (prefers faster-whisper, falls back to openai-whisper), "faster", or
+    # "openai".
+    voice_engine: str = "auto"
+    # Language code for Whisper transcription.
+    voice_language: str = "en"
+    # sounddevice input device index to record from. Run with `--voice_list_devices=true` to see options.
+    voice_device: int | None = None
+    # Print available microphones and exit (does not connect to the robot).
+    voice_list_devices: bool = False
+    # Wake phrase the actual instruction must follow, e.g. "make me a sandwich" in "Hey Chef, make me a
+    # sandwich" only counts starting after "Hey Chef". Case-insensitive. If the phrase isn't heard at all,
+    # the recording is discarded (treated as not directed at the robot) instead of falling back to the
+    # full transcript. Set to "" to disable and use the whole transcript as-is.
+    voice_wake_word: str = "hey chef"
     # The one task this test recognizes. If `prompt` matches this (by LLM judgement, so paraphrases are
     # fine), every trajectory in `trajectories_dir` gets played back in sequence.
     task_description: str = "make a sandwich"
@@ -219,6 +259,51 @@ def play_by_prompt(cfg: PlayByPromptConfig):
     init_logging()
     logging.info(pformat(asdict(cfg)))
 
+    if cfg.voice_list_devices:
+        from lerobot.utils.voice_input import list_input_devices
+
+        list_input_devices()
+        return
+
+    if cfg.voice:
+        if cfg.prompt:
+            logger.warning("Both --voice=true and --prompt were given; ignoring --prompt.")
+        print("\nGet ready to speak your instruction...")
+        prompt = record_and_transcribe(
+            model_name=cfg.voice_model,
+            language=cfg.voice_language,
+            engine=cfg.voice_engine,
+            device=cfg.voice_device,
+            max_duration=cfg.voice_max_duration,
+        )
+        print(f"Heard: {prompt!r}")
+        if not prompt:
+            print("Nothing transcribed -- try again, speak louder/longer, or pass --prompt instead.")
+            return
+
+        if cfg.voice_wake_word:
+            command = extract_after_wake_word(prompt, cfg.voice_wake_word)
+            if command is None:
+                print(
+                    f"\nDidn't hear the wake phrase {cfg.voice_wake_word!r} -- ignoring. Say "
+                    f'"{cfg.voice_wake_word}" followed by your instruction, e.g. "{cfg.voice_wake_word}, '
+                    f'make a sandwich".'
+                )
+                return
+            if not command:
+                print(
+                    f"\nHeard the wake phrase {cfg.voice_wake_word!r} but no instruction after it. Try again."
+                )
+                return
+            print(f"Wake phrase {cfg.voice_wake_word!r} detected.")
+            prompt = command
+
+        print(f"Prompt: {prompt!r}")
+    elif cfg.prompt:
+        prompt = cfg.prompt
+    else:
+        raise ValueError('Pass either --prompt="..." or --voice=true.')
+
     paths = list_trajectories(cfg.trajectories_dir)
     if not paths:
         raise FileNotFoundError(
@@ -226,16 +311,14 @@ def play_by_prompt(cfg: PlayByPromptConfig):
             "`lerobot-teleop-record` first."
         )
 
-    print(f"Asking the local LLM whether {cfg.prompt!r} means {cfg.task_description!r}...")
+    print(f"Asking the local LLM whether {prompt!r} means {cfg.task_description!r}...")
     ensure_server_running(cfg.host)
     ensure_model_available(cfg.model, cfg.host)
-    matched, raw = classify_match(cfg.prompt, cfg.task_description, cfg.model, cfg.host)
+    matched, raw = classify_match(prompt, cfg.task_description, cfg.model, cfg.host)
     logger.debug("Raw model output:\n%s", raw)
 
     if not matched:
-        print(
-            f"\n'{cfg.prompt}' does not match the known task ('{cfg.task_description}'). Doing nothing."
-        )
+        print(f"\n'{prompt}' does not match the known task ('{cfg.task_description}'). Doing nothing.")
         return
 
     if cfg.camera:
