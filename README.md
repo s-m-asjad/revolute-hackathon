@@ -105,7 +105,7 @@
 |-------|----------|
 | **Language** | Local **Ollama** (`qwen2.5:3b`) on Jetson decides if the utterance means *make a sandwich* (paraphrase-tolerant) |
 | **Vision** | **Qwen2.5-VL 3B** photographs the station and checks **text-labeled** ingredients (precision > guessy recognition) |
-| **Motion** | Teleop-recorded **trajectories** in [`trajectories/`](./trajectories/) replayed on the **reBot B601-RS** follower |
+| **Motion** | Per-ingredient **MLP policies** (bread, cucumber, tomato, cheese, …) selected by the VLM and run on the **reBot B601-RS** follower |
 | **Voice (optional front door)** | Local **Whisper** STT ([`voice_agent/`](./voice_agent/)) → text → Ollama — no cloud Whisper bill |
 | **Safety net** | Leader-arm teleop + kill switches so the live demo still *serves* if a model flakes |
 
@@ -120,42 +120,42 @@
 
 ## 🏗️ System architecture
 
-```text
-                    ┌─────────────────────────────────────┐
-                    │         GUEST / JUDGE               │
-                    │   "Make me a sandwich with ham"     │
-                    └──────────────┬──────────────────────┘
-                                   │
-              ┌────────────────────┼────────────────────┐
-              ▼                    ▼                    ▼
-     ┌────────────────┐   ┌────────────────┐   ┌────────────────┐
-     │  Voice (opt.)  │   │  Typed prompt  │   │  UI buttons    │
-     │  Whisper tiny  │   │  CLI / script  │   │  (fallback)    │
-     │  Mac or Jetson │   │                │   │                │
-     └───────┬────────┘   └───────┬────────┘   └───────┬────────┘
-             │ text               │ text               │ structured
-             └────────────────────┼────────────────────┘
-                                  ▼
-                    ┌─────────────────────────────────────┐
-                    │   Jetson Orin Nano · Ollama         │
-                    │   qwen2.5:3b  → intent gate         │
-                    │   qwen2.5vl:3b → ingredient check   │
-                    │   (models unloaded to fit memory)   │
-                    └──────────────────┬──────────────────┘
-                                       │ play skills
-                                       ▼
-                    ┌─────────────────────────────────────┐
-                    │  Trajectory library                 │
-                    │  trajectories/*.json  (60 Hz)       │
-                    │  recorded via leader → follower     │
-                    └──────────────────┬──────────────────┘
-                                       │
-                                       ▼
-                    ┌─────────────────────────────────────┐
-                    │  reBot B601-RS  ·  SocketCAN        │
-                    │  + reBot 102 leader (teleop / data) │
-                    │  + USB cams (overhead / wrist)      │
-                    └─────────────────────────────────────┘
+Policies are small **MLPs** (one skill each), trained to overfit a single teleop demo. The on-device VLM checks which labeled ingredients are on the station, then selects and sequences the matching policy blocks.
+
+```mermaid
+flowchart TD
+    Guest["GUEST / JUDGE<br/>Make me a sandwich with ham"]
+
+    Guest --> Voice["Voice optional<br/>Whisper tiny"]
+    Guest --> Typed["Typed prompt<br/>CLI / script"]
+    Guest --> UI["UI buttons<br/>fallback"]
+
+    Voice --> Jetson
+    Typed --> Jetson
+    UI --> Jetson
+
+    Jetson["Jetson Orin Nano · Ollama<br/>qwen2.5:3b · intent gate<br/>qwen2.5vl:3b · ingredient check"]
+
+    Jetson -->|"VLM selects policies"| Policies
+
+    subgraph Policies["Skill policies · MLP each"]
+        direction LR
+        Bread["Bread MLP"]
+        Cucumber["Cucumber MLP"]
+        Tomato["Tomato MLP"]
+        Cheese["Cheese MLP"]
+        Lettuce["Lettuce MLP"]
+        More["…"]
+    end
+
+    Bread --> Arm
+    Cucumber --> Arm
+    Tomato --> Arm
+    Cheese --> Arm
+    Lettuce --> Arm
+    More --> Arm
+
+    Arm["reBot B601-RS · SocketCAN<br/>+ reBot 102 leader · USB cams"]
 ```
 
 ### Hardware (event kit)
@@ -172,7 +172,7 @@
 | Pillar | Implementation |
 |--------|----------------|
 | Control & data | [LeRobot](https://github.com/huggingface/lerobot) + Seeed reBot plugins (`seeed_b601_rs_follower`, `rebot_arm_102_leader`) |
-| Skills | JSON trajectories · [`lerobot-teleop-record`](./commands.txt) · [`lerobot-playback`](./commands.txt) |
+| Skills | MLP policies per ingredient · train from teleop demos · [`lerobot-train-bread-mlp`](./commands.txt) · [`lerobot-play-by-prompt`](./commands.txt) |
 | Intent | Ollama · `lerobot-play-by-prompt` · paraphrase match for sandwich intent |
 | Vision gate | Camera frame → Qwen2.5-VL · **text labels required** for precision |
 | Voice agent | [`voice_agent/`](./voice_agent/) · free local Whisper · HTTP to Ollama |
